@@ -1,5 +1,37 @@
 name: drive-pane
-version: "0.1.0"
-description: "Always-on right sidebar pane showing the Google Drive mirror root, read-only."
+version: "0.2.0"
+description: "Always-on right sidebar pane with stacked, read-only file browsers for configured folders on the gateway host."
 author: "catduck"
 hooks: []
+config_schema:
+  roots:
+    type: list
+    label: Sections
+    description: >-
+      Folders shown in the Drive pane, top to bottom (up to 8). Each entry is
+      {"label": "...", "path": "/absolute/path/on/the/gateway"}, optionally with
+      a "key" and a "local" map of where the same files appear on desktop
+      computers, per OS: {"windows": {"": "\\\\server\\share"}, "macos":
+      {"": "/Volumes/share"}}. A "local" key is a subfolder prefix ("" = the
+      whole root; the longest match wins), and it enables "Open on this
+      computer" and "Show in Explorer/Finder" in the right-click menu. A bare
+      path string also works. Listings are read-only. Changes apply on the
+      pane's next refresh.
+    default:
+      - label: Google Drive
+        path: /mnt/google-drive
+        key: drive
+        local:
+          windows:
+            "": '\\plutonium\CloudBackup\Google'
+      - label: Uranium
+        path: /mnt/uranium
+        key: uranium
+        local:
+          windows:
+            media: '\\192.168.250.135\media'
+  max_entries:
+    type: int
+    label: Max entries per folder
+    description: Folders list first; files past this count are cut off (50 to 20000).
+    default: 2000

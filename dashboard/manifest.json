@@ -1,7 +1,7 @@
 {
   "name": "drive-pane",
   "label": "Drive",
-  "description": "Read-only Google Drive mirror listing for the desktop Drive pane",
-  "version": "0.1.0",
+  "description": "Read-only folder listings for the desktop Drive pane",
+  "version": "0.2.0",
   "api": "plugin_api.py"
 }
