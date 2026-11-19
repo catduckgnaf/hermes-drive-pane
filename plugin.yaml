@@ -1,0 +1,5 @@
+name: drive-pane
+version: "0.1.0"
+description: "Always-on right sidebar pane showing the Google Drive mirror root, read-only."
+author: "catduck"
+hooks: []
