@@ -10,7 +10,7 @@
 
 import { host } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const ID = 'drive-pane'
 
@@ -35,15 +35,21 @@ function DrivePane({ ctx }) {
   const [path, setPath] = useState(() => ctx.storage.get('path') || '')
   const [hidden, setHidden] = useState(false)
   const [state, setState] = useState({ loading: true })
+  // Monotonic request id: only the newest listing may land, so a slow reply
+  // for a folder you already clicked past can't overwrite the current one.
+  const reqId = useRef(0)
 
   const load = useCallback(async (p) => {
+    const id = ++reqId.current
     setState((s) => ({ ...s, loading: true, error: null }))
     try {
       const q = `?path=${encodeURIComponent(p)}${hidden ? '&hidden=true' : ''}`
       const data = unwrap(await ctx.rest(`/list${q}`))
+      if (id !== reqId.current) return
       setState({ loading: false, data })
       ctx.storage.set('path', data.path || '')
     } catch (err) {
+      if (id !== reqId.current) return
       setState({ loading: false, error: String(err?.message || err) })
     }
   }, [ctx, hidden])
@@ -55,7 +61,9 @@ function DrivePane({ ctx }) {
   const up = () => setPath(crumbs.slice(0, -1).join('/'))
 
   const insert = async (abs) => {
-    const ok = await host.composer.insertText(null, abs, { mode: 'inline' })
+    // Drive names are full of spaces and apostrophes; quote for the agent.
+    const text = /[\s'"`$\\]/.test(abs) ? `"${abs.replace(/(["\\$`])/g, '\\$1')}"` : abs
+    const ok = await host.composer.insertText(null, text, { mode: 'inline' })
     if (!ok) host.notify({ kind: 'info', message: abs })
   }
 
