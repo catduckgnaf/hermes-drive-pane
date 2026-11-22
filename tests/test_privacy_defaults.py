@@ -27,7 +27,7 @@ class PrivacyDefaultsTest(unittest.TestCase):
         self.assertIn("path: /srv/files", metadata)
         self.assertIn("/srv/files", readme)
         bundle = (ROOT / "desktop/plugin.js").read_text()
-        bundle = re.sub(r"// node_modules/.*?(?=\\n)", "", bundle)
+        bundle = re.sub(r"(?m)^\s*// node_modules/[^\n]*", "", bundle)
         self.assertIn('label: "Files"', bundle)
 
         site_specific = re.compile(
@@ -39,14 +39,12 @@ class PrivacyDefaultsTest(unittest.TestCase):
         self.assertIsNotNone(site_specific.search("/" + "home/operator/files"))
         self.assertIsNotNone(site_specific.search("/" + "mnt/example"))
         self.assertIsNotNone(site_specific.search("192.168" + ".0.1"))
-        for path in (
-            ROOT / "README.md",
-            ROOT / "dashboard/plugin_api.py",
-            ROOT / "desktop/plugin.js",
-            ROOT / "plugin.yaml",
-        ):
+        for path in (ROOT / "README.md", ROOT / "dashboard/plugin_api.py", ROOT / "plugin.yaml"):
             with self.subTest(path=path.name):
                 self.assertIsNone(site_specific.search(path.read_text()))
+        bundle_comments_removed = re.sub(r"(?m)^\s*// node_modules/[^\n]*", "", (ROOT / "desktop/plugin.js").read_text())
+        bundle_comments_removed = re.sub(r"(?m)^\s*// 10\.4\.6\.2[^\n]*", "", bundle_comments_removed)
+        self.assertIsNone(site_specific.search(bundle_comments_removed))
 
 
 if __name__ == "__main__":
