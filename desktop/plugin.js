@@ -33206,7 +33206,7 @@ var version = XLSX.version;
 
 // desktop/plugin.src.js
 var ID = "drive-pane";
-var FALLBACK_ROOTS = [{ key: "drive", label: "Google Drive", local: {} }];
+var FALLBACK_ROOTS = [{ key: "files", label: "Files", local: {} }];
 var MIN_SHARE = 0.08;
 var OS = (() => {
   const ua = typeof navigator === "undefined" ? "" : navigator.userAgent || "";
@@ -33216,6 +33216,21 @@ var OS = (() => {
 })();
 var REVEAL_LABEL = { windows: "Show in Explorer", macos: "Show in Finder", linux: "Show in file manager" }[OS];
 var NO_LOCAL = `No local path for this folder on this computer. Add one under the root's "local" setting (Settings > Plugins > drive-pane).`;
+var MAX_PREVIEW_SHEETS = 32;
+var MAX_PREVIEW_ROWS = 1e3;
+var MAX_PREVIEW_COLUMNS = 200;
+function previewBounds(ref, decodeRange) {
+  const range = decodeRange(ref || "A1");
+  const endRow = Math.min(range.e.r, range.s.r + MAX_PREVIEW_ROWS - 1);
+  const endColumn = Math.min(range.e.c, range.s.c + MAX_PREVIEW_COLUMNS - 1);
+  return {
+    startRow: range.s.r,
+    endRow,
+    startColumn: range.s.c,
+    endColumn,
+    truncated: range.e.r > endRow || range.e.c > endColumn
+  };
+}
 function fmtSize(n) {
   if (n == null) return "";
   if (n < 1024) return `${n} B`;
@@ -33372,22 +33387,22 @@ function DocumentPreview({ ctx, root, path, name, onClose }) {
       } else if (name.toLowerCase().endsWith(".docx")) {
         setData({ docx: bytes });
       } else {
-        const book = readSync(bytes, { type: "array", cellFormula: true, cellText: true, cellStyles: false });
-        const sheets = book.SheetNames.map((sheet) => {
+        const book = readSync(bytes, { type: "array", cellFormula: true, cellText: true, cellStyles: false, sheetRows: MAX_PREVIEW_ROWS });
+        const sheets = book.SheetNames.slice(0, MAX_PREVIEW_SHEETS).map((sheet) => {
           const ws = book.Sheets[sheet];
-          const range = utils.decode_range(ws["!ref"] || "A1");
+          const bounds = previewBounds(ws["!ref"], utils.decode_range);
           const rows = [];
-          for (let r = range.s.r; r <= range.e.r; r++) {
+          for (let r = bounds.startRow; r <= bounds.endRow; r++) {
             const row = [];
-            for (let c = range.s.c; c <= range.e.c; c++) {
+            for (let c = bounds.startColumn; c <= bounds.endColumn; c++) {
               const cell = ws[utils.encode_cell({ r, c })];
               row.push(cell ? { value: cell.w ?? cell.v ?? "", formula: cell.f || "" } : { value: "", formula: "" });
             }
             rows.push(row);
           }
-          return { name: sheet, rows };
+          return { name: sheet, rows, truncated: bounds.truncated };
         });
-        setData({ sheets, active: 0 });
+        setData({ sheets, active: 0, truncatedSheets: book.SheetNames.length > MAX_PREVIEW_SHEETS });
       }
     }).catch((e) => {
       if (!cancelled) setError(String(e?.message || e));
@@ -33408,7 +33423,7 @@ function DocumentPreview({ ctx, root, path, name, onClose }) {
     jsxs("div", { style: { padding: "8px 12px", display: "flex", gap: "12px", borderBottom: "1px solid var(--ui-stroke-secondary)" }, children: [jsx("strong", { style: { flex: 1, overflow: "hidden", textOverflow: "ellipsis" }, children: name }), jsx("button", { onClick: onClose, children: "Close" })] }),
     data?.url ? jsx("iframe", { title: name, src: data.url, sandbox: "", referrerPolicy: "no-referrer", style: { flex: 1, border: 0 } }) : null,
     data?.docx ? jsx("div", { ref: docHost, style: { flex: 1, overflow: "auto", padding: "16px" } }) : null,
-    isXlsx && activeSheet ? jsxs("div", { style: { flex: 1, minHeight: 0, overflow: "auto" }, children: [jsx("div", { role: "tablist", children: data.sheets.map((sheet, i) => jsx("button", { role: "tab", "aria-selected": i === data.active, onClick: () => setData((d) => ({ ...d, active: i })), children: sheet.name }, sheet.name)) }), jsx("table", { style: { borderCollapse: "collapse", fontSize: "12px" }, children: activeSheet.rows.map((row, ri) => jsx("tr", { children: row.map((v, ci) => jsx("td", { title: v.formula ? `=${v.formula}` : "", style: { border: "1px solid #aaa", padding: "3px 6px", whiteSpace: "pre-wrap" }, children: String(v.value) }, ci)) }, ri)) })] }) : null,
+    isXlsx && activeSheet ? jsxs("div", { style: { flex: 1, minHeight: 0, overflow: "auto" }, children: [jsx("div", { role: "tablist", children: data.sheets.map((sheet, i) => jsx("button", { role: "tab", "aria-selected": i === data.active, onClick: () => setData((d) => ({ ...d, active: i })), children: sheet.name }, sheet.name)) }), data.truncatedSheets || activeSheet.truncated ? jsx("div", { role: "status", style: { padding: "6px 10px", color: "var(--ui-text-secondary)" }, children: `Preview limited to ${MAX_PREVIEW_SHEETS} sheets, ${MAX_PREVIEW_ROWS} rows and ${MAX_PREVIEW_COLUMNS} columns per sheet.` }) : null, jsx("table", { style: { borderCollapse: "collapse", fontSize: "12px" }, children: activeSheet.rows.map((row, ri) => jsx("tr", { children: row.map((v, ci) => jsx("td", { title: v.formula ? `=${v.formula}` : "", style: { border: "1px solid #aaa", padding: "3px 6px", whiteSpace: "pre-wrap" }, children: String(v.value) }, ci)) }, ri)) })] }) : null,
     !data && !error ? jsx("div", { style: { padding: 20 }, children: "Loading preview\u2026" }) : null,
     error ? jsx("div", { role: "alert", style: { padding: 20 }, children: `Could not preview file: ${error}` }) : null
   ] });

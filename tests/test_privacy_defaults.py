@@ -23,10 +23,12 @@ class PrivacyDefaultsTest(unittest.TestCase):
 
         metadata = (ROOT / "plugin.yaml").read_text()
         readme = (ROOT / "README.md").read_text()
-        desktop = (ROOT / "desktop/plugin.js").read_text()
+        source = (ROOT / "desktop/plugin.src.js").read_text()
         self.assertIn("path: /srv/files", metadata)
         self.assertIn("/srv/files", readme)
-        self.assertIn("label: 'Files'", desktop)
+        bundle = (ROOT / "desktop/plugin.js").read_text()
+        bundle = re.sub(r"// node_modules/.*?(?=\\n)", "", bundle)
+        self.assertIn('label: "Files"', bundle)
 
         site_specific = re.compile(
             r"(?:/" + "home/[^\\s]+|/" + "mnt/[^\\s]+|"
