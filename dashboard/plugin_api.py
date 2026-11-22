@@ -19,12 +19,14 @@ handlers in its threadpool instead of blocking the gateway's event loop.
 from __future__ import annotations
 
 import logging
+import base64
 import os
 import re
 from pathlib import Path
 from typing import Any, NamedTuple
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 
 PLUGIN_ID = "drive-pane"
 # `local` maps a root to where the same files appear on the desktop machine,
@@ -40,6 +42,8 @@ DEFAULT_ROOTS = [
 LOCAL_OSES = ("windows", "macos", "linux")
 MAX_ROOTS = 8
 DEFAULT_MAX_ENTRIES = 2000
+MAX_PREVIEW_BYTES = 20 * 1024 * 1024
+PREVIEW_EXTENSIONS = {".docx", ".xlsx", ".pdf"}
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -222,3 +226,36 @@ def list_dir(path: str = "", hidden: bool = False, root: str = ""):
         "entries": entries,
         "truncated": truncated,
     }
+
+
+@router.get("/preview")
+def preview_file(path: str = "", root: str = ""):
+    """Read a bounded original document inside its configured root."""
+    if not path or len(path) > 4096:
+        raise HTTPException(status_code=400, detail="invalid path")
+    suffix = Path(path).suffix.lower()
+    if suffix not in PREVIEW_EXTENSIONS:
+        raise HTTPException(status_code=415, detail="unsupported preview type")
+    base = _root(_config()[0], root).path
+    target = _resolve(base, path)
+    try:
+        info = target.stat()
+    except OSError:
+        raise HTTPException(status_code=404, detail="file not found")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="not a file")
+    if info.st_size > MAX_PREVIEW_BYTES:
+        raise HTTPException(status_code=413, detail="file exceeds 20 MiB preview limit")
+    try:
+        with target.open("rb") as stream:
+            content = stream.read(MAX_PREVIEW_BYTES + 1)
+    except OSError:
+        raise HTTPException(status_code=404, detail="file not readable")
+    if len(content) > MAX_PREVIEW_BYTES:
+        raise HTTPException(status_code=413, detail="file exceeds 20 MiB preview limit")
+    media_type = {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }[suffix]
+    return {"content": base64.b64encode(content).decode("ascii"), "media_type": media_type}

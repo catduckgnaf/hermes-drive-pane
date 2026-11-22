@@ -16,6 +16,8 @@
 import { host } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { renderAsync as renderDocx } from 'docx-preview'
+import * as XLSX from 'xlsx'
 
 const ID = 'drive-pane'
 
@@ -160,12 +162,60 @@ function ContextMenu({ menu, onClose }) {
   })
 }
 
+function DocumentPreview({ ctx, root, path, name, onClose }) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const docHost = useRef(null)
+  useEffect(() => {
+    let cancelled = false
+    const q = `?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}`
+    ctx.rest(`/preview${q}`).then((res) => {
+      const raw = unwrap(res)
+      if (!raw?.content || typeof raw.content !== 'string') throw new Error('invalid preview response')
+      const binary = atob(raw.content)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      return bytes.buffer
+    }).then(async (bytes) => {
+      if (cancelled) return
+      if (name.toLowerCase().endsWith('.pdf')) {
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+        setData({ url })
+      } else if (name.toLowerCase().endsWith('.docx')) {
+        setData({ docx: bytes })
+      } else {
+        const book = XLSX.read(bytes, { type: 'array', cellFormula: true, cellText: true, cellStyles: false })
+        const sheets = book.SheetNames.map((sheet) => { const ws = book.Sheets[sheet]; const range = XLSX.utils.decode_range(ws['!ref'] || 'A1'); const rows = []; for (let r = range.s.r; r <= range.e.r; r++) { const row = []; for (let c = range.s.c; c <= range.e.c; c++) { const cell = ws[XLSX.utils.encode_cell({ r, c })]; row.push(cell ? { value: cell.w ?? cell.v ?? '', formula: cell.f || '' } : { value: '', formula: '' }) } rows.push(row) } return { name: sheet, rows } })
+        setData({ sheets, active: 0 })
+      }
+    }).catch((e) => { if (!cancelled) setError(String(e?.message || e)) })
+    return () => { cancelled = true; if (data?.url) URL.revokeObjectURL(data.url) }
+  }, [ctx, root, path, name])
+  useEffect(() => {
+    if (data?.docx && docHost.current) {
+      renderDocx(data.docx, docHost.current, undefined, { inWrapper: false, ignoreWidth: true, ignoreHeight: true, renderHeaders: true, renderFooters: true, renderFootnotes: true, renderEndnotes: true })
+        .catch((e) => setError(String(e?.message || e)))
+    }
+  }, [data])
+  const isXlsx = name.toLowerCase().endsWith('.xlsx')
+  const activeSheet = data?.sheets?.[data.active]
+  return jsxs('div', { role: 'dialog', 'aria-label': `Preview ${name}`, style: { position: 'fixed', inset: '5vh 5vw', zIndex: 10001, display: 'flex', flexDirection: 'column', background: 'var(--ui-bg-primary, #fff)', color: 'var(--ui-text-primary, #111)', border: '1px solid var(--ui-stroke-secondary)', borderRadius: '8px', boxShadow: '0 8px 36px #0008', overflow: 'hidden' }, children: [
+    jsxs('div', { style: { padding: '8px 12px', display: 'flex', gap: '12px', borderBottom: '1px solid var(--ui-stroke-secondary)' }, children: [jsx('strong', { style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }, children: name }), jsx('button', { onClick: onClose, children: 'Close' })] }),
+    data?.url ? jsx('iframe', { title: name, src: data.url, sandbox: '', referrerPolicy: 'no-referrer', style: { flex: 1, border: 0 } }) : null,
+    data?.docx ? jsx('div', { ref: docHost, style: { flex: 1, overflow: 'auto', padding: '16px' } }) : null,
+    isXlsx && activeSheet ? jsxs('div', { style: { flex: 1, minHeight: 0, overflow: 'auto' }, children: [jsx('div', { role: 'tablist', children: data.sheets.map((sheet, i) => jsx('button', { role: 'tab', 'aria-selected': i === data.active, onClick: () => setData((d) => ({ ...d, active: i })), children: sheet.name }, sheet.name)) }), jsx('table', { style: { borderCollapse: 'collapse', fontSize: '12px' }, children: activeSheet.rows.map((row, ri) => jsx('tr', { children: row.map((v, ci) => jsx('td', { title: v.formula ? `=${v.formula}` : '', style: { border: '1px solid #aaa', padding: '3px 6px', whiteSpace: 'pre-wrap' }, children: String(v.value) }, ci)) }, ri)) })] }) : null,
+    !data && !error ? jsx('div', { style: { padding: 20 }, children: 'Loading preview…' }) : null,
+    error ? jsx('div', { role: 'alert', style: { padding: 20 }, children: `Could not preview file: ${error}` }) : null
+  ] })
+}
+
 function Browser({ ctx, root, label, local, onRefresh, style }) {
   const pathKey = pathKeyFor(root)
   const [path, setPath] = useState(() => ctx.storage.get(pathKey) || '')
   const [hidden, setHidden] = useState(false)
   const [state, setState] = useState({ loading: true })
   const [menu, setMenu] = useState(null)
+  const [preview, setPreview] = useState(null)
   const closeMenu = useCallback(() => setMenu(null), [])
   // Monotonic request id: only the newest listing may land, so a slow reply
   // for a folder you already clicked past can't overwrite the current one.
@@ -265,7 +315,7 @@ function Browser({ ctx, root, label, local, onRefresh, style }) {
       return jsxs('div', {
         style: { ...rowStyle, cursor: broken ? 'default' : 'pointer', opacity: broken ? 0.5 : 1 },
         title: broken ? `${abs} (link to a place outside ${label})` : abs,
-        onClick: () => { if (broken) return; e.dir ? go(rel) : insertPath(abs) },
+        onClick: () => { if (broken) return; if (e.dir) go(rel); else if (/\.(docx|xlsx|pdf)$/i.test(e.name)) setPreview({ rel, name: e.name }); else insertPath(abs) },
         onContextMenu: (ev) => (broken ? ev.preventDefault() : openMenu(ev, { rel, abs, dir: e.dir })),
         onMouseEnter: (ev) => { if (!broken) ev.currentTarget.style.background = 'var(--ui-stroke-secondary)' },
         onMouseLeave: (ev) => { ev.currentTarget.style.background = 'transparent' },
@@ -294,7 +344,8 @@ function Browser({ ctx, root, label, local, onRefresh, style }) {
     children: [
       header,
       jsx('div', { style: { flex: 1, minHeight: 0, overflow: 'auto' }, onScroll: closeMenu, children: body }),
-      menu ? jsx(ContextMenu, { menu, onClose: closeMenu }) : null
+      menu ? jsx(ContextMenu, { menu, onClose: closeMenu }) : null,
+      preview ? jsx(DocumentPreview, { ctx, root, path: preview.rel, name: preview.name, onClose: () => setPreview(null) }) : null
     ]
   })
 }
