@@ -63,9 +63,18 @@ plugins:
 The backend re-reads the settings on every request. The pane picks up changes when the
 window regains focus or when you press a section's refresh.
 
-## Layout
+## Building the desktop plugin
 
-- `desktop/plugin.js`: the pane (desktop half)
+The checked-in `desktop/plugin.js` is built from `desktop/plugin.src.js` with pinned local dependencies. The Desktop loader still resolves only `@hermes/plugin-sdk`, `react`, and `react/jsx-runtime`; the DOCX and XLSX renderer code is bundled into the plugin, with no CDN or runtime package installation.
+
+Rebuild reproducibly with Node.js and npm:
+
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
+npm run build
+npm run test:bundle
+```
+
 - `dashboard/plugin_api.py`: read-only listing routes at `/api/plugins/drive-pane/`
   (`/roots`, `/list?root=<key>&path=...`). A request names a root by key, never by
   path, so only configured folders are reachable.
