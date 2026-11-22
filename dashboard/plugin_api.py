@@ -27,15 +27,10 @@ from typing import Any, NamedTuple
 from fastapi import APIRouter, HTTPException
 
 PLUGIN_ID = "drive-pane"
-# `local` maps a root to where the same files appear on the desktop machine,
-# per OS: {os: {subpath prefix: local path}} ("" maps the whole root). The
-# pane uses it to open a file in its desktop app or reveal it in the file
-# manager. Uranium only exports `media` over SMB, so only that maps.
+# `local` maps a root to its desktop-machine location, per OS. Keep public
+# defaults generic; operators supply their own private roots in plugin settings.
 DEFAULT_ROOTS = [
-    {"label": "Google Drive", "path": "/mnt/google-drive", "key": "drive",
-     "local": {"windows": {"": r"\\plutonium\CloudBackup\Google"}}},
-    {"label": "Uranium", "path": "/mnt/uranium", "key": "uranium",
-     "local": {"windows": {"media": r"\\192.168.250.135\media"}}},
+    {"label": "Files", "path": "/srv/files", "key": "files", "local": {}},
 ]
 LOCAL_OSES = ("windows", "macos", "linux")
 MAX_ROOTS = 8
