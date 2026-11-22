@@ -2,7 +2,7 @@
  * drive-pane: a right sidebar tab with stacked, read-only file browsers for
  * folders on the gateway host, independent of which chat is focused. The
  * sections come from the plugin's `roots` setting (Settings > Plugins >
- * drive-pane; default Google Drive and Uranium) and are split by draggable
+ * drive-pane; generic default configuration) and are split by draggable
  * dividers. Click a folder to open it; click a file to insert its path into
  * the focused chat's composer. Right-click for more: open the item on this
  * computer in its default app, reveal it in Explorer/Finder, copy paths.
@@ -20,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const ID = 'drive-pane'
 
 // Used until /roots answers, and if it never does (older backend).
-const FALLBACK_ROOTS = [{ key: 'drive', label: 'Google Drive', local: {} }]
+const FALLBACK_ROOTS = [{ key: 'files', label: 'Files', local: {} }]
 const MIN_SHARE = 0.08 // smallest fraction of the pane a section can be dragged to
 
 const OS = (() => {
